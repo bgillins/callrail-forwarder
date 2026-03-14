@@ -1,5 +1,5 @@
 import type { CallRailCallEvent, CallRailTextEvent, CompanyConfig } from "./types";
-import { getRecordingUrl, downloadRecording } from "./callrail-client";
+import { fetchRecording, fetchRecordingByCallId } from "./callrail-client";
 import { transcribeAudio } from "./transcribe";
 import { summarizeForSms } from "./summarize";
 import { sendSms } from "./sms";
@@ -123,27 +123,24 @@ async function handleVoicemail(
   // Download recording and transcribe with Whisper
   if (event.recording) {
     try {
-      let mp3Buffer: Buffer | null = null;
+      let mp3Buffer: Buffer;
 
-      // The recording field may be a direct URL or an API endpoint URL.
-      // Try downloading directly first (handles both cases).
       const recordingStr = String(event.recording);
-      if (recordingStr.startsWith("http")) {
-        try {
-          mp3Buffer = await downloadRecording(recordingStr);
-        } catch {
-          console.log(`[${config.label}] Direct download failed, trying API...`);
-        }
-      }
-
-      // Fall back to fetching recording URL via CallRail API
-      if (!mp3Buffer) {
-        const recordingUrl = await getRecordingUrl(
+      if (recordingStr.includes("api.callrail.com")) {
+        // Recording field is an authenticated API URL — fetch with auth
+        mp3Buffer = await fetchRecording(config.apiKey, recordingStr);
+      } else if (recordingStr.startsWith("http")) {
+        // Direct MP3 URL (e.g. HIPAA accounts)
+        const res = await fetch(recordingStr);
+        if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+        mp3Buffer = Buffer.from(await res.arrayBuffer());
+      } else {
+        // No URL — try by call ID as last resort
+        mp3Buffer = await fetchRecordingByCallId(
           config.accountId,
           config.apiKey,
           event.id,
         );
-        mp3Buffer = await downloadRecording(recordingUrl);
       }
 
       transcription = await transcribeAudio(mp3Buffer);
