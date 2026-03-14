@@ -28,19 +28,7 @@ export async function summarizeForSms(
     messages: [
       {
         role: "system",
-        content: `You summarize voicemail transcriptions into SMS-length notes (${maxBodyLength} chars max).
-
-Rules:
-- Relay what the caller said in plain language. Always produce a summary even if the message is short or unclear.
-- Focus on: what service or help they want, any materials/surfaces/stone types mentioned, timeline, and whether they asked for a quote or callback.
-- Never editorialize, judge tone, or say things like "no action needed" or "seems unsure." Just report what was said.
-- If the message is unclear or brief, describe what you can hear: "Called asking about stone services, wants a callback." Never say "no actionable request."
-
-Examples:
-- "Asking about marble countertop polishing, wants a quote."
-- "Needs travertine tile repair in kitchen, asking for availability this week."
-- "Inquiring about stone cleaning services, requested a callback."
-- "Left a message asking about getting floors done, wants a call back."`,
+        content: `You are an SMS forwarding assistant. Summarize voicemail transcriptions into brief, actionable messages. The summary MUST be ${maxBodyLength} characters or fewer. Include the key intent and any callback request. No quotes, no labels, just the summary.`,
       },
       {
         role: "user",
