@@ -83,7 +83,7 @@ export async function handleCall(
       return { forwarded: false, reason: "spam_filtered" };
     }
 
-    const smsMessage = `Missed call from ${caller}`;
+    const smsMessage = `[${config.label}] Missed call from ${caller}`;
 
     try {
       await sendSms(config.forwardTo, smsMessage);
@@ -151,11 +151,11 @@ async function handleVoicemail(
   let smsMessage: string;
 
   if (transcription && transcription.trim().length > 0) {
-    smsMessage = await summarizeForSms(transcription, caller);
+    smsMessage = await summarizeForSms(transcription, caller, config.label);
   } else {
-    smsMessage = `VM from ${caller}: New voicemail (no transcription). Call back.`;
+    smsMessage = `[${config.label}] VM from ${caller}: New voicemail (no transcription). Call back.`;
     if (smsMessage.length > 160) {
-      smsMessage = `VM from ${callerPhone}: Voicemail. Call back.`;
+      smsMessage = `[${config.label}] VM from ${callerPhone}: Voicemail. Call back.`;
     }
   }
 
@@ -183,7 +183,7 @@ export async function handleTextMessage(
   const content = event.content || "(empty message)";
 
   // Build SMS — keep under 160 chars
-  const prefix = `TXT from ${senderPhone}: `;
+  const prefix = `[${config.label}] TXT from ${senderPhone}: `;
   const maxBody = 160 - prefix.length;
   const body =
     content.length > maxBody

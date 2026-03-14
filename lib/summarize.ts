@@ -17,8 +17,9 @@ function getClient(): OpenAI {
 export async function summarizeForSms(
   transcription: string,
   caller: string,
+  companyLabel: string,
 ): Promise<string> {
-  const phonePrefix = `VM from ${caller}: `;
+  const phonePrefix = `[${companyLabel}] VM from ${caller}: `;
   const maxBodyLength = 160 - phonePrefix.length;
 
   const response = await getClient().chat.completions.create({
