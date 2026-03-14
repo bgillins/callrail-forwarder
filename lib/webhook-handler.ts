@@ -4,8 +4,104 @@ import { transcribeAudio } from "./transcribe";
 import { summarizeForSms } from "./summarize";
 import { sendSms } from "./sms";
 
+// --- Spam filter ---
+// CallRail CNAM for spam/robocalls typically shows as city names or generic labels.
+// All comparisons are case-insensitive and trimmed.
+const SPAM_NAME_PATTERNS = [
+  "las vegas",
+  "laughlin",
+  "logandale",
+  "mount charleston",
+  "mt charleston",
+  "searchlight",
+  "nelson",
+  "henderson",
+  "north las vegas",
+  "boulder city",
+  "pahrump",
+  "mesquite",
+  "wireless caller",
+  "unknown",
+  "unavailable",
+  "toll free",
+  "toll-free",
+  "anonymous",
+  "private caller",
+  "no caller id",
+];
+
 /**
- * Handle a voicemail or missed call event.
+ * Returns true if the caller name looks like spam (city name, generic label, or empty).
+ */
+function isSpamCaller(callerName: string | null | undefined): boolean {
+  if (!callerName || callerName.trim().length === 0) return true;
+
+  const normalized = callerName.trim().toLowerCase();
+
+  // Exact match or starts-with match (handles "Laughlin NV", "Nelson NV", etc.)
+  return SPAM_NAME_PATTERNS.some(
+    (pattern) => normalized === pattern || normalized.startsWith(pattern + " "),
+  );
+}
+
+/** Format caller identity for SMS — include name when available */
+function formatCaller(
+  phone: string,
+  name: string | null | undefined,
+): string {
+  if (name && name.trim().length > 0 && !isSpamCaller(name)) {
+    return `${name.trim()} (${phone})`;
+  }
+  return phone;
+}
+
+/**
+ * Handle a post-call event.
+ *
+ * Two paths:
+ * A) VOICEMAIL: transcribe → summarize → forward SMS (always, regardless of caller name)
+ * B) MISSED CALL (no voicemail): only forward if caller name is NOT a spam pattern
+ */
+export async function handleCall(
+  event: CallRailCallEvent,
+  config: CompanyConfig,
+): Promise<{ forwarded: boolean; message?: string; error?: string; reason?: string }> {
+  const callerPhone = event.customer_phone_number;
+  const callerName = event.customer_name;
+  const caller = formatCaller(callerPhone, callerName);
+
+  // --- PATH A: Voicemail ---
+  if (event.voicemail) {
+    return handleVoicemail(event, config, caller, callerPhone);
+  }
+
+  // --- PATH B: Missed call (no voicemail, not answered) ---
+  if (!event.answered) {
+    // Spam filter — skip if caller name is a city/generic label
+    if (isSpamCaller(callerName)) {
+      console.log(`[${config.label}] Skipped spam caller: "${callerName}" ${callerPhone}`);
+      return { forwarded: false, reason: "spam_filtered" };
+    }
+
+    const smsMessage = `Missed call from ${caller}`;
+
+    try {
+      await sendSms(config.forwardTo, smsMessage);
+      console.log(`[${config.label}] Forwarded missed call from ${caller}`);
+      return { forwarded: true, message: smsMessage };
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      console.error(`[${config.label}] Failed to forward missed call:`, error);
+      return { forwarded: false, error };
+    }
+  }
+
+  // Answered call — ignore
+  return { forwarded: false, reason: "answered_call" };
+}
+
+/**
+ * Handle a voicemail: transcribe → summarize → forward.
  *
  * Pipeline:
  * 1. Check if CallRail already has a transcription in the payload
@@ -14,11 +110,12 @@ import { sendSms } from "./sms";
  * 4. Summarize via GPT-4o-mini to fit SMS length
  * 5. Forward via TextBelt
  */
-export async function handleVoicemail(
+async function handleVoicemail(
   event: CallRailCallEvent,
   config: CompanyConfig,
+  caller: string,
+  callerPhone: string,
 ): Promise<{ forwarded: boolean; message?: string; error?: string }> {
-  const callerPhone = event.customer_phone_number;
   let transcription = event.transcription || null;
 
   // Step 1: Try fetching transcription from CallRail API if not in payload
@@ -54,19 +151,18 @@ export async function handleVoicemail(
   let smsMessage: string;
 
   if (transcription && transcription.trim().length > 0) {
-    smsMessage = await summarizeForSms(transcription, callerPhone);
+    smsMessage = await summarizeForSms(transcription, caller);
   } else {
-    // No transcription available — send a basic notification
-    smsMessage = `VM from ${callerPhone}: New voicemail received (no transcription available). Call them back.`;
+    smsMessage = `VM from ${caller}: New voicemail (no transcription). Call back.`;
     if (smsMessage.length > 160) {
-      smsMessage = `VM from ${callerPhone}: New voicemail. Call back.`;
+      smsMessage = `VM from ${callerPhone}: Voicemail. Call back.`;
     }
   }
 
   // Step 4: Forward
   try {
     await sendSms(config.forwardTo, smsMessage);
-    console.log(`[${config.label}] Forwarded voicemail from ${callerPhone}`);
+    console.log(`[${config.label}] Forwarded voicemail from ${caller}`);
     return { forwarded: true, message: smsMessage };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
@@ -77,8 +173,7 @@ export async function handleVoicemail(
 
 /**
  * Handle an incoming text message event.
- *
- * Simply forwards the text content + sender phone via SMS.
+ * Forwards the text content + sender phone via SMS.
  */
 export async function handleTextMessage(
   event: CallRailTextEvent,

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHmac } from "crypto";
 import { getCompanyConfigs } from "@/lib/config";
-import { handleVoicemail, handleTextMessage } from "@/lib/webhook-handler";
+import { handleCall, handleTextMessage } from "@/lib/webhook-handler";
 import type { CallRailCallEvent, CallRailTextEvent, CompanyConfig } from "@/lib/types";
 
 // Vercel paid plan — allow up to 300s for transcription pipeline
@@ -49,15 +49,8 @@ export async function POST(request: NextRequest) {
   try {
     if (isCallEvent(payload)) {
       const callEvent = payload as unknown as CallRailCallEvent;
-
-      // Only process voicemails and missed calls
-      if (callEvent.voicemail || !callEvent.answered) {
-        const result = await handleVoicemail(callEvent, config);
-        return NextResponse.json({ received: true, ...result });
-      }
-
-      // Answered call — acknowledge but don't forward
-      return NextResponse.json({ received: true, forwarded: false, reason: "answered_call" });
+      const result = await handleCall(callEvent, config);
+      return NextResponse.json({ received: true, ...result });
     }
 
     if (isTextEvent(payload)) {

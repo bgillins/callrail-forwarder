@@ -12,13 +12,13 @@ function getClient(): OpenAI {
 /**
  * Summarize a voicemail transcription into an SMS-ready message.
  * Output is kept under 160 characters (single SMS segment) including
- * the caller phone number prefix.
+ * the caller identity prefix.
  */
 export async function summarizeForSms(
   transcription: string,
-  callerPhone: string,
+  caller: string,
 ): Promise<string> {
-  const phonePrefix = `VM from ${callerPhone}: `;
+  const phonePrefix = `VM from ${caller}: `;
   const maxBodyLength = 160 - phonePrefix.length;
 
   const response = await getClient().chat.completions.create({
