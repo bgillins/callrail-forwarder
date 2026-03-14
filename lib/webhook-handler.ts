@@ -1,5 +1,5 @@
 import type { CallRailCallEvent, CallRailTextEvent, CompanyConfig } from "./types";
-import { fetchRecording, fetchRecordingByCallId } from "./callrail-client";
+import { downloadRecording, fetchRecordingByCallId } from "./callrail-client";
 import { transcribeAudio } from "./transcribe";
 import { summarizeForSms } from "./summarize";
 import { sendSms } from "./sms";
@@ -126,16 +126,11 @@ async function handleVoicemail(
       let mp3Buffer: Buffer;
 
       const recordingStr = String(event.recording);
-      if (recordingStr.includes("api.callrail.com")) {
-        // Recording field is an authenticated API URL — fetch with auth
-        mp3Buffer = await fetchRecording(config.apiKey, recordingStr);
-      } else if (recordingStr.startsWith("http")) {
-        // Direct MP3 URL (e.g. HIPAA accounts)
-        const res = await fetch(recordingStr);
-        if (!res.ok) throw new Error(`Download failed: ${res.status}`);
-        mp3Buffer = Buffer.from(await res.arrayBuffer());
+      if (recordingStr.startsWith("http")) {
+        // Direct URL from webhook (app.callrail.com with access_key) — no auth needed
+        mp3Buffer = await downloadRecording(recordingStr);
       } else {
-        // No URL — try by call ID as last resort
+        // No URL — try by call ID via API as fallback
         mp3Buffer = await fetchRecordingByCallId(
           config.accountId,
           config.apiKey,
