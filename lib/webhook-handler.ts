@@ -1,5 +1,5 @@
 import type { CallRailCallEvent, CallRailTextEvent, CompanyConfig } from "./types";
-import { getCallWithTranscription, getRecordingUrl, downloadRecording } from "./callrail-client";
+import { getRecordingUrl, downloadRecording } from "./callrail-client";
 import { transcribeAudio } from "./transcribe";
 import { summarizeForSms } from "./summarize";
 import { sendSms } from "./sms";
@@ -101,14 +101,16 @@ export async function handleCall(
 }
 
 /**
- * Handle a voicemail: transcribe → summarize → forward.
+ * Handle a voicemail: download recording → Whisper transcribe → summarize → forward.
+ *
+ * We always use our own Whisper transcription (cheaper than CallRail's
+ * Conversation Intelligence plan at $0.003/min via gpt-4o-mini-transcribe).
  *
  * Pipeline:
- * 1. Check if CallRail already has a transcription in the payload
- * 2. If not, fetch call details with ?fields=transcription
- * 3. If still no transcription, download recording → Whisper STT
- * 4. Summarize via GPT-4o-mini to fit SMS length
- * 5. Forward via TextBelt
+ * 1. Fetch recording URL from CallRail API
+ * 2. Download MP3 → transcribe with Whisper
+ * 3. Summarize via GPT-4o-mini to fit SMS length
+ * 4. Forward via TextBelt
  */
 async function handleVoicemail(
   event: CallRailCallEvent,
@@ -116,24 +118,10 @@ async function handleVoicemail(
   caller: string,
   callerPhone: string,
 ): Promise<{ forwarded: boolean; message?: string; error?: string }> {
-  let transcription = event.transcription || null;
+  let transcription: string | null = null;
 
-  // Step 1: Try fetching transcription from CallRail API if not in payload
-  if (!transcription) {
-    try {
-      const callDetail = await getCallWithTranscription(
-        config.accountId,
-        config.apiKey,
-        event.id,
-      );
-      transcription = callDetail.transcription || null;
-    } catch (err) {
-      console.warn(`[${config.label}] Failed to fetch call transcription:`, err);
-    }
-  }
-
-  // Step 2: Fall back to Whisper if no transcription and recording exists
-  if (!transcription && event.recording) {
+  // Download recording and transcribe with Whisper
+  if (event.recording) {
     try {
       const recordingUrl = await getRecordingUrl(
         config.accountId,
@@ -142,6 +130,7 @@ async function handleVoicemail(
       );
       const mp3Buffer = await downloadRecording(recordingUrl);
       transcription = await transcribeAudio(mp3Buffer);
+      console.log(`[${config.label}] Transcribed voicemail (${mp3Buffer.length} bytes) from ${caller}`);
     } catch (err) {
       console.error(`[${config.label}] Failed to transcribe recording:`, err);
     }
