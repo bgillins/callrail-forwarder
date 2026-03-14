@@ -47,8 +47,8 @@ export interface CompanyConfig {
   companyId: string;
   /** Friendly label */
   label: string;
-  /** Phone number to forward SMS notifications to */
-  forwardTo: string;
+  /** Phone number(s) to forward SMS notifications to */
+  forwardTo: string | string[];
   /** HMAC signing key for this company's webhook */
   signingKey: string;
   /** CallRail API key (for fetching recordings/transcriptions) */
