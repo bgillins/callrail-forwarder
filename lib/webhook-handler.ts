@@ -123,12 +123,29 @@ async function handleVoicemail(
   // Download recording and transcribe with Whisper
   if (event.recording) {
     try {
-      const recordingUrl = await getRecordingUrl(
-        config.accountId,
-        config.apiKey,
-        event.id,
-      );
-      const mp3Buffer = await downloadRecording(recordingUrl);
+      let mp3Buffer: Buffer | null = null;
+
+      // The recording field may be a direct URL or an API endpoint URL.
+      // Try downloading directly first (handles both cases).
+      const recordingStr = String(event.recording);
+      if (recordingStr.startsWith("http")) {
+        try {
+          mp3Buffer = await downloadRecording(recordingStr);
+        } catch {
+          console.log(`[${config.label}] Direct download failed, trying API...`);
+        }
+      }
+
+      // Fall back to fetching recording URL via CallRail API
+      if (!mp3Buffer) {
+        const recordingUrl = await getRecordingUrl(
+          config.accountId,
+          config.apiKey,
+          event.id,
+        );
+        mp3Buffer = await downloadRecording(recordingUrl);
+      }
+
       transcription = await transcribeAudio(mp3Buffer);
       console.log(`[${config.label}] Transcribed voicemail (${mp3Buffer.length} bytes) from ${caller}`);
     } catch (err) {

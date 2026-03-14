@@ -43,7 +43,18 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  console.log(`[Webhook] Received event for ${config.label}`);
+  console.log(`[Webhook] Received event for ${config.label}`, JSON.stringify({
+    id: payload.id,
+    voicemail: payload.voicemail,
+    answered: payload.answered,
+    recording: payload.recording,
+    customer_phone_number: payload.customer_phone_number,
+    customer_name: payload.customer_name,
+    call_type: payload.call_type,
+    // text message fields
+    content: payload.content,
+    source_number: payload.source_number,
+  }));
 
   // Route by event type
   try {
