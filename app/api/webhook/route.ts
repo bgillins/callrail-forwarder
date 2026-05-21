@@ -13,6 +13,10 @@ import { normalizeCallWebhook, normalizeTextWebhook } from "@/lib/types";
 // Vercel paid plan — allow up to 300s for transcription pipeline
 export const maxDuration = 300;
 
+const TEXT_FORWARD_COMPANY_IDS = new Set([
+  "458066901", // Expert Stone Repair
+]);
+
 /**
  * CallRail webhook receiver.
  *
@@ -96,6 +100,15 @@ export async function POST(request: NextRequest) {
     }
 
     if (isTextEvent(fields)) {
+      if (!shouldForwardTextMessages(config)) {
+        console.log(`[${config.label}] Skipped text forwarding for non-Expert company`);
+        return NextResponse.json({
+          received: true,
+          forwarded: false,
+          reason: "text_forwarding_disabled",
+        });
+      }
+
       const textEvent = normalizeTextWebhook(fields);
       const result = await handleTextMessage(textEvent, config);
       return NextResponse.json({ received: true, ...result });
@@ -127,6 +140,10 @@ function isTextEvent(fields: CallRailWebhookFormFields): boolean {
     !!fields.source_number &&
     fields.voicemail === undefined
   );
+}
+
+function shouldForwardTextMessages(config: CompanyConfig): boolean {
+  return TEXT_FORWARD_COMPANY_IDS.has(config.companyId);
 }
 
 function findMatchingCompany(
