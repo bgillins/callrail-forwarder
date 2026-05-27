@@ -85,6 +85,8 @@ export interface CallRailWebhookFormFields {
   referrer?: string;
   call_type?: string;
   start_time?: string;
+  voice_assist?: string | boolean;
+  voice_assist_message?: unknown;
   // Text message fields (form-encoded)
   content?: string;
   source_number?: string;

@@ -199,3 +199,40 @@ export async function handleTextMessage(
     return { forwarded: false, error };
   }
 }
+
+/**
+ * Handle a Voice Assist message-taken event.
+ * This is separate from normal answered calls so AI-handled leads still alert.
+ */
+export async function handleVoiceAssistMessage(
+  event: CallRailCallEvent,
+  config: CompanyConfig,
+  voiceAssistMessage: unknown,
+): Promise<{ forwarded: boolean; message?: string; error?: string }> {
+  const callerPhone = event.customer_phone_number;
+  const caller = formatCaller(callerPhone, event.customer_name);
+  const urgency = extractVoiceAssistUrgency(voiceAssistMessage);
+  const urgencyText = urgency ? ` Urgency: ${urgency}.` : "";
+  const smsMessage = `[${config.label}] Voice Assist message from ${caller}.${urgencyText} Review lead ASAP.`;
+
+  try {
+    await sendSms(config.forwardTo, smsMessage);
+    console.log(`[${config.label}] Forwarded Voice Assist message from ${caller}`);
+    return { forwarded: true, message: smsMessage };
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    console.error(`[${config.label}] Failed to forward Voice Assist message:`, error);
+    return { forwarded: false, error };
+  }
+}
+
+function extractVoiceAssistUrgency(voiceAssistMessage: unknown): string | null {
+  if (!voiceAssistMessage || typeof voiceAssistMessage !== "object") {
+    return null;
+  }
+
+  const urgency = (voiceAssistMessage as { urgency?: unknown }).urgency;
+  return typeof urgency === "string" && urgency.trim().length > 0
+    ? urgency.trim()
+    : null;
+}

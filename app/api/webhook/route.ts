@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHmac } from "crypto";
 import { getCompanyConfigs } from "@/lib/config";
-import { handleCall, handleTextMessage } from "@/lib/webhook-handler";
+import { handleCall, handleTextMessage, handleVoiceAssistMessage } from "@/lib/webhook-handler";
 import type {
   CallRailCallEvent,
   CallRailTextEvent,
@@ -89,10 +89,22 @@ export async function POST(request: NextRequest) {
     callername: fields.callername,
     content: fields.content,
     source_number: fields.source_number,
+    voice_assist: fields.voice_assist,
+    voice_assist_message: fields.voice_assist_message ? "[present]" : "[absent]",
   }));
 
   // Route by event type
   try {
+    if (isVoiceAssistMessageEvent(fields)) {
+      const callEvent = normalizeCallWebhook(fields);
+      const result = await handleVoiceAssistMessage(
+        callEvent,
+        config,
+        fields.voice_assist_message,
+      );
+      return NextResponse.json({ received: true, ...result });
+    }
+
     if (isCallEvent(fields)) {
       const callEvent = normalizeCallWebhook(fields);
       const result = await handleCall(callEvent, config);
@@ -140,6 +152,10 @@ function isTextEvent(fields: CallRailWebhookFormFields): boolean {
     !!fields.source_number &&
     fields.voicemail === undefined
   );
+}
+
+function isVoiceAssistMessageEvent(fields: CallRailWebhookFormFields): boolean {
+  return fields.voice_assist_message !== undefined;
 }
 
 function shouldForwardTextMessages(config: CompanyConfig): boolean {
