@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
     content: fields.content,
     source_number: fields.source_number,
     voice_assist: fields.voice_assist,
-    voice_assist_message: fields.voice_assist_message ? "[present]" : "[absent]",
+    voice_assist_message: getVoiceAssistMessage(fields) ? "[present]" : "[absent]",
   }));
 
   // Route by event type
@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
       const result = await handleVoiceAssistMessage(
         callEvent,
         config,
-        fields.voice_assist_message,
+        getVoiceAssistMessage(fields),
       );
       return NextResponse.json({ received: true, ...result });
     }
@@ -155,11 +155,38 @@ function isTextEvent(fields: CallRailWebhookFormFields): boolean {
 }
 
 function isVoiceAssistMessageEvent(fields: CallRailWebhookFormFields): boolean {
-  return fields.voice_assist_message !== undefined;
+  return getVoiceAssistMessage(fields) !== null;
 }
 
 function shouldForwardTextMessages(config: CompanyConfig): boolean {
   return TEXT_FORWARD_COMPANY_IDS.has(config.companyId);
+}
+
+function getVoiceAssistMessage(fields: CallRailWebhookFormFields): unknown | null {
+  if (fields.voice_assist_message !== undefined) {
+    return fields.voice_assist_message;
+  }
+
+  const contents = fields["voice_assist_message: contents"];
+  const urgency = fields["voice_assist_message: urgency"];
+  const recordedAt = fields["voice_assist_message: recorded_at"];
+  const overrides = fields["voice_assist_message: overrides"];
+
+  if (
+    contents === undefined &&
+    urgency === undefined &&
+    recordedAt === undefined &&
+    overrides === undefined
+  ) {
+    return null;
+  }
+
+  return {
+    contents,
+    urgency,
+    recorded_at: recordedAt,
+    overrides,
+  };
 }
 
 function findMatchingCompany(

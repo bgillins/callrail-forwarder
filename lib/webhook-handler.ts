@@ -211,9 +211,15 @@ export async function handleVoiceAssistMessage(
 ): Promise<{ forwarded: boolean; message?: string; error?: string }> {
   const callerPhone = event.customer_phone_number;
   const caller = formatCaller(callerPhone, event.customer_name);
-  const urgency = extractVoiceAssistUrgency(voiceAssistMessage);
+  const normalizedMessage = normalizeVoiceAssistMessage(voiceAssistMessage);
+  const urgency = extractVoiceAssistUrgency(normalizedMessage);
   const urgencyText = urgency ? ` Urgency: ${urgency}.` : "";
-  const smsMessage = `[${config.label}] Voice Assist message from ${caller}.${urgencyText} Review lead ASAP.`;
+  const details = formatVoiceAssistDetails(normalizedMessage);
+  const detailsText = details ? ` Details: ${details}` : "";
+  const smsMessage = truncateSms(
+    `[${config.label}] Voice Assist message from ${caller}.${urgencyText}${detailsText} Review lead ASAP.`,
+    480,
+  );
 
   try {
     await sendSms(config.forwardTo, smsMessage);
@@ -226,13 +232,97 @@ export async function handleVoiceAssistMessage(
   }
 }
 
-function extractVoiceAssistUrgency(voiceAssistMessage: unknown): string | null {
+function normalizeVoiceAssistMessage(voiceAssistMessage: unknown): Record<string, unknown> | null {
+  if (typeof voiceAssistMessage === "string") {
+    const trimmed = voiceAssistMessage.trim();
+    if (!trimmed) return null;
+
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      return normalizeVoiceAssistMessage(parsed);
+    } catch {
+      return { contents: { message: trimmed } };
+    }
+  }
+
   if (!voiceAssistMessage || typeof voiceAssistMessage !== "object") {
     return null;
   }
 
-  const urgency = (voiceAssistMessage as { urgency?: unknown }).urgency;
+  return voiceAssistMessage as Record<string, unknown>;
+}
+
+function extractVoiceAssistUrgency(voiceAssistMessage: Record<string, unknown> | null): string | null {
+  const urgency = voiceAssistMessage?.urgency;
   return typeof urgency === "string" && urgency.trim().length > 0
     ? urgency.trim()
     : null;
+}
+
+function formatVoiceAssistDetails(voiceAssistMessage: Record<string, unknown> | null): string {
+  const contents = normalizeVoiceAssistContents(voiceAssistMessage?.contents);
+  if (!contents) return "";
+
+  return Object.entries(contents)
+    .map(([question, answer]) => {
+      const formattedAnswer = formatVoiceAssistAnswer(answer);
+      if (!formattedAnswer) return null;
+
+      return `${formatVoiceAssistLabel(question)}: ${formattedAnswer}`;
+    })
+    .filter((detail): detail is string => !!detail)
+    .join("; ");
+}
+
+function normalizeVoiceAssistContents(contents: unknown): Record<string, unknown> | null {
+  if (typeof contents === "string") {
+    const trimmed = contents.trim();
+    if (!trimmed) return null;
+
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      return normalizeVoiceAssistContents(parsed);
+    } catch {
+      return { message: trimmed };
+    }
+  }
+
+  if (!contents || typeof contents !== "object" || Array.isArray(contents)) {
+    return null;
+  }
+
+  return contents as Record<string, unknown>;
+}
+
+function formatVoiceAssistLabel(label: string): string {
+  return label
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function formatVoiceAssistAnswer(answer: unknown): string {
+  if (answer === null || answer === undefined) return "";
+
+  if (Array.isArray(answer)) {
+    return answer.map(formatVoiceAssistAnswer).filter(Boolean).join(", ");
+  }
+
+  if (typeof answer === "object") {
+    return Object.entries(answer as Record<string, unknown>)
+      .map(([key, value]) => {
+        const formatted = formatVoiceAssistAnswer(value);
+        return formatted ? `${formatVoiceAssistLabel(key)} ${formatted}` : null;
+      })
+      .filter((detail): detail is string => !!detail)
+      .join(", ");
+  }
+
+  return String(answer).replace(/\s+/g, " ").trim();
+}
+
+function truncateSms(message: string, maxLength: number): string {
+  if (message.length <= maxLength) return message;
+  return `${message.slice(0, maxLength - 3).trimEnd()}...`;
 }

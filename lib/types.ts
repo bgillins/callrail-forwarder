@@ -65,6 +65,7 @@ export interface CompanyConfig {
  * `callernum` not `customer_phone_number`, booleans as "true"/"false" strings).
  */
 export interface CallRailWebhookFormFields {
+  [key: string]: unknown;
   resource_id: string;        // call ID like "CAL019cecf..."
   company_id: string;
   company_resource_id?: string;
@@ -87,6 +88,10 @@ export interface CallRailWebhookFormFields {
   start_time?: string;
   voice_assist?: string | boolean;
   voice_assist_message?: unknown;
+  "voice_assist_message: contents"?: unknown;
+  "voice_assist_message: overrides"?: unknown;
+  "voice_assist_message: recorded_at"?: unknown;
+  "voice_assist_message: urgency"?: unknown;
   // Text message fields (form-encoded)
   content?: string;
   source_number?: string;
