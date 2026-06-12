@@ -201,6 +201,33 @@ export async function handleTextMessage(
 }
 
 /**
+ * Handle a Voice Assist call-answered event.
+ * Fires the moment the AI agent picks up — alert immediately so a human
+ * can call the lead back while they're still warm (or still on the line).
+ * No spam filter: a live caller talking to the AI is a real person.
+ */
+export async function handleVoiceAssistAnswered(
+  event: CallRailCallEvent,
+  config: CompanyConfig,
+): Promise<{ forwarded: boolean; message?: string; error?: string }> {
+  const caller = formatCaller(event.customer_phone_number, event.customer_name);
+  const smsMessage = truncateSms(
+    `[${config.label}] Someone is on the phone with the AI voice assistant RIGHT NOW: ${caller}. Reach out to them ASAP.`,
+    320,
+  );
+
+  try {
+    await sendSms(config.forwardTo, smsMessage);
+    console.log(`[${config.label}] Forwarded Voice Assist answered alert for ${caller}`);
+    return { forwarded: true, message: smsMessage };
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    console.error(`[${config.label}] Failed to forward Voice Assist answered alert:`, error);
+    return { forwarded: false, error };
+  }
+}
+
+/**
  * Handle a Voice Assist message-taken event.
  * This is separate from normal answered calls so AI-handled leads still alert.
  */

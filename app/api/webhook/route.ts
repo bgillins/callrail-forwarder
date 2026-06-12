@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHmac } from "crypto";
 import { getCompanyConfigs } from "@/lib/config";
-import { handleCall, handleTextMessage, handleVoiceAssistMessage } from "@/lib/webhook-handler";
+import {
+  handleCall,
+  handleTextMessage,
+  handleVoiceAssistAnswered,
+  handleVoiceAssistMessage,
+} from "@/lib/webhook-handler";
 import type {
   CallRailCallEvent,
   CallRailTextEvent,
@@ -105,6 +110,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ received: true, ...result });
     }
 
+    if (isVoiceAssistAnsweredEvent(fields)) {
+      const callEvent = normalizeCallWebhook(fields);
+      const result = await handleVoiceAssistAnswered(callEvent, config);
+      return NextResponse.json({ received: true, ...result });
+    }
+
     if (isCallEvent(fields)) {
       const callEvent = normalizeCallWebhook(fields);
       const result = await handleCall(callEvent, config);
@@ -126,7 +137,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ received: true, ...result });
     }
 
-    // Unknown event type — acknowledge
+    // Unknown event type — acknowledge, but log field names for diagnosis
+    console.warn(
+      `[${config.label}] Unknown event type; fields: ${Object.keys(fields).join(", ")}`,
+    );
     return NextResponse.json({ received: true, forwarded: false, reason: "unknown_event_type" });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -156,6 +170,25 @@ function isTextEvent(fields: CallRailWebhookFormFields): boolean {
 
 function isVoiceAssistMessageEvent(fields: CallRailWebhookFormFields): boolean {
   return getVoiceAssistMessage(fields) !== null;
+}
+
+/**
+ * Voice Assist "Call Answered" webhook — fires the moment the AI agent
+ * picks up. The call is still in progress, so there's no message, no
+ * recording, and no meaningful duration yet. A post-call webhook for the
+ * same call arrives later with a real duration, so requiring duration to
+ * be absent/zero keeps this from double-firing at the end of the call.
+ */
+function isVoiceAssistAnsweredEvent(fields: CallRailWebhookFormFields): boolean {
+  const voiceAssist = fields.voice_assist;
+  const isVoiceAssist =
+    voiceAssist === true || String(voiceAssist).toLowerCase() === "true";
+  if (!isVoiceAssist) return false;
+
+  if (getVoiceAssistMessage(fields) !== null) return false;
+  if (fields.recording !== undefined) return false;
+
+  return fields.duration === undefined || Number(fields.duration) === 0;
 }
 
 function shouldForwardTextMessages(config: CompanyConfig): boolean {
