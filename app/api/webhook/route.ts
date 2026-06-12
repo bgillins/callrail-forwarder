@@ -86,6 +86,7 @@ export async function POST(request: NextRequest) {
 
   console.log(`[Webhook] Received event for ${config.label}`, JSON.stringify({
     resource_id: fields.resource_id,
+    call_id: fields.call_id,
     voicemail: fields.voicemail,
     answered: fields.answered,
     recording: fields.recording ? "[present]" : "[absent]",
@@ -111,8 +112,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (isVoiceAssistAnsweredEvent(fields)) {
-      const callEvent = normalizeCallWebhook(fields);
-      const result = await handleVoiceAssistAnswered(callEvent, config);
+      const result = await handleVoiceAssistAnswered(String(fields.call_id), config);
       return NextResponse.json({ received: true, ...result });
     }
 
@@ -174,21 +174,18 @@ function isVoiceAssistMessageEvent(fields: CallRailWebhookFormFields): boolean {
 
 /**
  * Voice Assist "Call Answered" webhook — fires the moment the AI agent
- * picks up. The call is still in progress, so there's no message, no
- * recording, and no meaningful duration yet. A post-call webhook for the
- * same call arrives later with a real duration, so requiring duration to
- * be absent/zero keeps this from double-firing at the end of the call.
+ * picks up. Observed payload (Jun 2026) carries ONLY these fields:
+ * call_id, person_id, tracking_number, timestamp — unlike every other
+ * CallRail webhook, which uses resource_id and includes caller info.
+ * The bare call_id (without resource_id or text content) is the signature.
  */
 function isVoiceAssistAnsweredEvent(fields: CallRailWebhookFormFields): boolean {
-  const voiceAssist = fields.voice_assist;
-  const isVoiceAssist =
-    voiceAssist === true || String(voiceAssist).toLowerCase() === "true";
-  if (!isVoiceAssist) return false;
-
-  if (getVoiceAssistMessage(fields) !== null) return false;
-  if (fields.recording !== undefined) return false;
-
-  return fields.duration === undefined || Number(fields.duration) === 0;
+  return (
+    fields.call_id !== undefined &&
+    fields.resource_id === undefined &&
+    fields.content === undefined &&
+    getVoiceAssistMessage(fields) === null
+  );
 }
 
 function shouldForwardTextMessages(config: CompanyConfig): boolean {

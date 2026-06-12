@@ -87,6 +87,11 @@ export interface CallRailWebhookFormFields {
   call_type?: string;
   start_time?: string;
   voice_assist?: string | boolean;
+  // Voice Assist Call Answered webhook — minimal payload, no caller info
+  call_id?: string;
+  person_id?: string;
+  tracking_number?: string;
+  timestamp?: string;
   voice_assist_message?: unknown;
   "voice_assist_message: contents"?: unknown;
   "voice_assist_message: overrides"?: unknown;
@@ -153,4 +158,5 @@ export interface CallDetailResponse {
   call_summary?: string | null;
   recording?: string | null;
   customer_phone_number: string;
+  customer_name?: string | null;
 }

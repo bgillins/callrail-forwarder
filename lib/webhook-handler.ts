@@ -1,5 +1,5 @@
 import type { CallRailCallEvent, CallRailTextEvent, CompanyConfig } from "./types";
-import { downloadRecording, fetchRecordingByCallId } from "./callrail-client";
+import { downloadRecording, fetchCallDetails, fetchRecordingByCallId } from "./callrail-client";
 import { transcribeAudio } from "./transcribe";
 import { summarizeForSms } from "./summarize";
 import { sendSms } from "./sms";
@@ -205,12 +205,24 @@ export async function handleTextMessage(
  * Fires the moment the AI agent picks up — alert immediately so a human
  * can call the lead back while they're still warm (or still on the line).
  * No spam filter: a live caller talking to the AI is a real person.
+ *
+ * The webhook payload only carries call_id/person_id/tracking_number/timestamp,
+ * so we fetch the caller's phone and name from the CallRail API. If that
+ * lookup fails, still alert — a human checking CallRail beats a missed lead.
  */
 export async function handleVoiceAssistAnswered(
-  event: CallRailCallEvent,
+  callId: string,
   config: CompanyConfig,
 ): Promise<{ forwarded: boolean; message?: string; error?: string }> {
-  const caller = formatCaller(event.customer_phone_number, event.customer_name);
+  let caller = "Unknown caller — check CallRail for details";
+  try {
+    const details = await fetchCallDetails(config.accountId, config.apiKey, callId);
+    if (details.customer_phone_number) {
+      caller = formatCaller(details.customer_phone_number, details.customer_name);
+    }
+  } catch (err) {
+    console.error(`[${config.label}] Failed to fetch call details for ${callId}:`, err);
+  }
   const smsMessage = truncateSms(
     `[${config.label}] Someone is on the phone with the AI voice assistant RIGHT NOW: ${caller}. Reach out to them ASAP.`,
     320,

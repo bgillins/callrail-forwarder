@@ -1,4 +1,4 @@
-import type { RecordingResponse } from "./types";
+import type { CallDetailResponse, RecordingResponse } from "./types";
 
 const BASE_URL = "https://api.callrail.com/v3";
 
@@ -23,6 +23,24 @@ async function callRailFetch<T>(
   }
 
   return res.json() as Promise<T>;
+}
+
+/**
+ * Fetch call details (caller phone/name) for a call ID.
+ *
+ * Needed for Voice Assist Call Answered webhooks, whose payload only
+ * contains call_id/person_id/tracking_number/timestamp — no caller info.
+ */
+export async function fetchCallDetails(
+  accountId: string,
+  apiKey: string,
+  callId: string,
+): Promise<CallDetailResponse> {
+  return callRailFetch<CallDetailResponse>(
+    accountId,
+    apiKey,
+    `/calls/${callId}.json`,
+  );
 }
 
 /**
